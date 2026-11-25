@@ -416,9 +416,15 @@ h1 { margin-top: 0; }
   .card h2 { font-size: clamp(19px, 2.8vw, 26px); }
   .about h2, .wesstron h2 { font-size: clamp(22px, 3vw, 28px); }
 }
-@media (max-width:700px) {
-  .board { min-height: 414px; }
-  .board-grid { --rows-space: 22px; }
+@media (max-width:700px), (max-width:1000px) and (max-height:510px) and (pointer:coarse) {
+  .board {
+    height: clamp(355px, calc(100vh - 230px), min(132vw, 560px));
+    height: clamp(355px, calc(100svh - 230px), min(132vw, 560px));
+  }
+  .board-grid {
+    --rows-space: 24px;
+    height: 100%;
+  }
   .card .paper { padding-block: 12px 7px; }
   .card h2 { margin-block: 6px 4px; }
   .card .bottom { font-size: clamp(8px, 1.8vw, 10px); gap: 3px; padding-top: 4px; }
@@ -427,8 +433,11 @@ h1 { margin-top: 0; }
   .hobbies .paper { padding-block: 6px; }
   .about-sheet-intro h2 { font-size: clamp(22px, 6vw, 34px); }
 }
-@media (max-width:365px) {
-  .board { min-height: 433px; }
+@media (max-width:1000px) and (max-height:510px) and (pointer:coarse) {
+  .board { padding-block: 14px; }
+  .card h2 { font-size: clamp(14px, 3vw, 20px); }
+  .card p, .card .hand, .card .system-line, .card .timeline-mini,
+  .project-names, .skills .skill-list { display: none; }
 }
 
 </style></head><body>
