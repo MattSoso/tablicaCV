@@ -1,0 +1,88 @@
+name: Deploy mateuszsosinski.pl
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-mateuszsosinski
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Check hosting configuration
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SSH_HOST SSH_USER SSH_PASSWORD SSH_KNOWN_HOSTS DEPLOY_PATH; do
+            if [[ -z "${!name}" ]]; then
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              echo "Deployment not configured. Follow README.md." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.config.outputs.ready == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install SSH password helper
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sshpass
+
+      - name: Upload and activate index.html
+        if: steps.config.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo "Invalid SSH_HOST"; exit 1; }
+          [[ "$SSH_USER" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]] || { echo "Invalid SSH_USER"; exit 1; }
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo "DEPLOY_PATH must be an absolute directory"; exit 1; }
+          [[ "$DEPLOY_PATH" != "/" && "$DEPLOY_PATH" != *".."* ]] || { echo "Invalid DEPLOY_PATH"; exit 1; }
+          test -s index.html
+          grep -qi '<html' index.html
+
+          umask 077
+          known_hosts="$RUNNER_TEMP/deploy-known-hosts"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$known_hosts"
+          trap 'rm -f "$known_hosts"' EXIT
+          export SSHPASS="$SSH_PASSWORD"
+          options=(-o "UserKnownHostsFile=$known_hosts" -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1)
+          target="$SSH_USER@$SSH_HOST"
+          directory="${DEPLOY_PATH%/}"
+          temporary="$directory/.index-$GITHUB_SHA.html"
+          expected="$(sha256sum index.html | cut -d ' ' -f 1)"
+
+          sshpass -e ssh "${options[@]}" "$target" "test -d '$directory' && test -w '$directory'"
+          sshpass -e scp "${options[@]}" index.html "$target:$temporary"
+          sshpass -e ssh "${options[@]}" "$target" "
+            set -eu
+            actual=\$(sha256sum '$temporary' | cut -d ' ' -f 1)
+            test \"\$actual\" = '$expected'
+            chmod 644 '$temporary'
+            mv -f '$temporary' '$directory/index.html'
+          "
+          echo "Uploaded and verified index.html for https://mateuszsosinski.pl (commit $GITHUB_SHA)." >> "$GITHUB_STEP_SUMMARY"
